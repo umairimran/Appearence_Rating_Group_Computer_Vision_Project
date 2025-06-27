@@ -53,23 +53,22 @@ def detect_smile(landmarks, image_w, image_h):
     cheek_raise_left = euclidean(get_point(LEFT_EYE), get_point(LEFT_CHEEK)) / face_width
     cheek_raise_right = euclidean(get_point(RIGHT_EYE), get_point(RIGHT_CHEEK)) / face_width
 
-    # Rule-based smile score
     smile_score = 0
     if mouth_spread > 0.38:
         smile_score += 1
-    if lip_opening > 0.03:
-        smile_score += 0.5
-    if eye_openness_left < 0.045 and eye_openness_right < 0.045:
-        smile_score += 1
-    if cheek_raise_left < 0.07 and cheek_raise_right < 0.07:
-        smile_score += 1
+        if lip_opening > 0.03:
+            smile_score += 0.5
+        if eye_openness_left < 0.045 and eye_openness_right < 0.045:
+            smile_score += 1
+        if cheek_raise_left < 0.07 and cheek_raise_right < 0.07:
+            smile_score += 1
 
     smiling = smile_score >= 1
 
     # Smile duration logic
     if smiling:
         count += 1
-        if count >= 10:
+        if count >= 7:
             real_smile_active = True
     else:
         count = 0
