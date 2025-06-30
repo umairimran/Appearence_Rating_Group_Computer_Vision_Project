@@ -18,7 +18,6 @@ class MediaPipeService:
         """Process a single frame and return face landmarks if detected."""
         img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.face_mesh.process(img_rgb)
-
         if results.multi_face_landmarks:
             self.mp_drawing.draw_landmarks(
                 frame,
