@@ -4,23 +4,25 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import  time
+
+
 class MediaPipeService:
     def __init__(self):
-        # Drawing utils
         self.count = 0
         self.real_smile_active = False
+        self.score=0.0
+        self.smile_count = 0
+        self.smile_buffer = 0
+        self.smile_active = False
         self.mp_drawing = mp.solutions.drawing_utils
-        # 🎨 Custom Drawing Specs
-        self.face_drawing_spec = self.mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=1, circle_radius=1)  # Yellow for face
-        self.pose_drawing_spec = self.mp_drawing.DrawingSpec(color=(255, 255, 0), thickness=2, circle_radius=2)    # Blue for pose
-        # Face Mesh setup
+        self.face_drawing_spec = self.mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=1, circle_radius=1) 
+        self.pose_drawing_spec = self.mp_drawing.DrawingSpec(color=(255, 255, 0), thickness=2, circle_radius=2)
         self.mp_face_mesh = mp.solutions.face_mesh
         self.face_mesh = self.mp_face_mesh.FaceMesh(
             refine_landmarks=True,
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5
         )
-        # Pose setup
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(
             static_image_mode=False,
@@ -29,24 +31,16 @@ class MediaPipeService:
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5
         )
-
-        # Result holders
         self.face_results = None
         self.pose_results = None
-
-    # Process frame for face landmarks
     def process_face(self, image):
         rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         self.face_results = self.face_mesh.process(rgb_image)
         return self.face_results
-
-    # Process frame for pose estimation
     def process_pose(self, image):
         rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         self.pose_results = self.pose.process(rgb_image)
         return self.pose_results
-
-    # Draw face landmarks with custom color
     def draw_face_landmarks(self, image):
         if self.face_results and self.face_results.multi_face_landmarks:
             for face_landmarks in self.face_results.multi_face_landmarks:
@@ -57,8 +51,6 @@ class MediaPipeService:
                     landmark_drawing_spec=self.face_drawing_spec,
                     connection_drawing_spec=self.face_drawing_spec
                 )
-
-    # Draw pose landmarks with custom color
     def draw_pose_landmarks(self, image):
         if self.pose_results and self.pose_results.pose_landmarks:
             self.mp_drawing.draw_landmarks(
@@ -70,6 +62,7 @@ class MediaPipeService:
             )
  
     def detect_smile(self, landmarks, image_w, image_h,frame):
+        
         def get_point(index):
             lm = landmarks[index]
             return (int(lm.x * image_w), int(lm.y * image_h))
@@ -91,45 +84,43 @@ class MediaPipeService:
         RIGHT_FACE = 454
 
         face_width = self.euclidean(get_point(LEFT_FACE), get_point(RIGHT_FACE)) + 1e-6
-
-        # Smile-related features
         mouth_spread = self.euclidean(get_point(LEFT_MOUTH), get_point(RIGHT_MOUTH)) / face_width
         lip_opening = self.euclidean(get_point(UPPER_LIP), get_point(LOWER_LIP)) / face_width
         eye_openness_left = self.euclidean(get_point(LEFT_EYE_TOP), get_point(LEFT_EYE_BOTTOM)) / face_width
         eye_openness_right = self.euclidean(get_point(RIGHT_EYE_TOP), get_point(RIGHT_EYE_BOTTOM)) / face_width
         cheek_raise_left = self.euclidean(get_point(LEFT_EYE), get_point(LEFT_CHEEK)) / face_width
         cheek_raise_right = self.euclidean(get_point(RIGHT_EYE), get_point(RIGHT_CHEEK)) / face_width
-
-        # New: Lip corner lift compared to upper lip (indicates closed-mouth smile)
         lip_corner_left_y = get_point(LEFT_MOUTH)[1]
         lip_corner_right_y = get_point(RIGHT_MOUTH)[1]
         upper_lip_y = get_point(UPPER_LIP)[1]
 
-        # Rule-based smile scoring
+        # Compute smile score
         smile_score = 0
-    # Rule-based smile score
-        smile_score = 0
-        if mouth_spread > 0.38:
+        if mouth_spread > 0.35:
             smile_score += 1
-        if lip_opening > 0.03:
-            smile_score += 0.5
-        if eye_openness_left < 0.045 and eye_openness_right < 0.045:
-            smile_score += 1
-        if cheek_raise_left < 0.07 and cheek_raise_right < 0.07:
-            smile_score += 1
+            if lip_opening > 0.03:
+                smile_score += 0.5
+            if eye_openness_left < 0.058 and eye_openness_right < 0.058:
+                smile_score += 1
+            if 0.26 <= cheek_raise_left <= 0.32 and 0.26 <= cheek_raise_right <= 0.32:
+                smile_score += 1
 
-        # Threshold tuned for both open and closed-mouth smiles
         smiling = smile_score >= 1
 
-        # Smile duration logic
+        # Frame-based smoothing
+        ACTIVATION_THRESHOLD = 5      # min frames to activate smile
+        DEACTIVATION_BUFFER = 10      # frames to keep smile after disappearance
+
         if smiling:
             self.count += 1
-            if self.count >= 7:
+            self.smile_buffer = DEACTIVATION_BUFFER  # refresh
+            if self.count >= ACTIVATION_THRESHOLD:
                 self.real_smile_active = True
         else:
             self.count = 0
-            self.real_smile_active = False
-
+            self.smile_buffer -= 1
+            if self.smile_buffer <= 0:
+                self.real_smile_active = False
 
         return self.real_smile_active, smile_score
 
@@ -137,13 +128,11 @@ class MediaPipeService:
          return np.linalg.norm(np.array(p1) - np.array(p2))
     def _to_pixel_coords(self, landmark, image_w, image_h):
         return np.array([landmark.x * image_w, landmark.y * image_h])
-
     def _shoulder_tilt_angle(self, l_shoulder, r_shoulder):
         dx = r_shoulder[0] - l_shoulder[0]
         dy = r_shoulder[1] - l_shoulder[1]
         angle_deg = np.degrees(np.arctan2(dy, dx))
 
-        # Normalize to [-90, 90]
         if angle_deg < -90:
             angle_deg += 180
         elif angle_deg > 90:
@@ -202,7 +191,10 @@ class MediaPipeService:
         image = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
         image.flags.writeable=False
         self.pose_results=self.pose.process(image)
-        lm=self.pose_results.pose_landmarks.landmark
+        if self.pose_results.pose_landmarks:
+            lm=self.pose_results.pose_landmarks.landmark
+        else:
+            lm=None
         try:
             nose=self._to_pixel_coords(lm[0],w,h)
             l_shoulder=self._to_pixel_coords(lm[11],w,h)
@@ -279,6 +271,11 @@ class MediaPipeService:
                 else:
                     head_pose_text = "Looking Straight"
 
+                if head_pose_text == "Looking Straight":
+                    head_pose_score = 1.0
+                else:
+                    head_pose_score = 0.0
+
                 nose_3d_projection, _ = cv2.projectPoints(nose_3d, rot_vec, trans_vec, cam_matrix, dist_matrix)
                 p1 = (int(nose_2d[0]), int(nose_2d[1]))
                 p2 = (int(nose_2d[0] + y * 10), int(nose_2d[1] - x * 10))
@@ -296,7 +293,8 @@ class MediaPipeService:
                 "head_pose_text": head_pose_text,
                 "fps": round(fps, 2),
                 "p1": p1,
-                "p2": p2
+                "p2": p2,
+                "head_pose_score": head_pose_score
             }
         else:
             return {
@@ -306,58 +304,135 @@ class MediaPipeService:
                 "head_pose_text": head_pose_text,
                 "fps": round(fps, 2),
                 "p1": None,
-                "p2": None
+                "p2": None,
+                "head_pose_score": 0.0
             }
 
+    def calculate_final_score(self,smile_score, simile_active, pose_confidence, head_pose_text):
+    
+        # Normalize smile_score (max 3.5 based on your smile detection logic)
+        norm_smile_score = min(smile_score / 1.5, 1.0)
 
-cap = cv2.VideoCapture(0)
-mp_service = MediaPipeService()
+        # Convert simile_active (bool) to 1.0 or 0.0
+        smile_active_score = 1.0 if simile_active else 0.0
 
-LINE_HEIGHT = 30
+        # Pose confidence is already normalized (assume it's one of 0.6, 0.8, 1.0)
+        confidence_score = min(max(pose_confidence, 0.0), 1.0)
 
-# Y-positions for each section
-Y_START_SMILE = 40
-Y_START_POSE = 120
-Y_START_HEAD = 240
+        # Head pose score: 1.0 only if looking straight
+        head_pose_score = 1.0 if head_pose_text == "Looking Straight" else 0.0
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-    mp_service.process_face(frame)
-    mp_service.process_pose(frame)
-    if mp_service.face_results and mp_service.face_results.multi_face_landmarks:
-        for face_landmarks in mp_service.face_results.multi_face_landmarks:
-            simile_active,smile_score=mp_service.detect_smile(face_landmarks.landmark, frame.shape[1], frame.shape[0],frame)
-        status = f"Smiling 😄 (Score: {smile_score:.2f})" if simile_active else f"Not Smiling 😐 (Score: {smile_score:.2f})"
+        # Weighted final score calculation
+        final_score = (
+            0.3 * norm_smile_score +
+            0.1 * smile_active_score +
+            0.4 * confidence_score +
+            0.2 * head_pose_score
+        )
+
+        return round(final_score, 2),norm_smile_score,smile_active_score,confidence_score,head_pose_score
+
+
+    def print_smile_status(self,frame, simile_active, smile_score):
+        h, w = frame.shape[:2]
+        margin_x = int(w * 0.01)  # 1% from left
+        margin_y = int(h * 0.04)  # 4% from top
+        font_scale = max(0.2, min(0.4, h / 1000.0))  # Small font, scales with height
+        status = f"Smiling (Score: {smile_score:.2f})" if simile_active else f"Not Smiling (Score: {smile_score:.2f})"
         color = (0, 255, 0) if simile_active else (0, 0, 255)
-        cv2.putText(frame, status, (30, Y_START_SMILE), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
-    pose_metrics=mp_service.pose_detection(frame)    
-    if pose_metrics["confidence_score"] is not None:
-        cv2.putText(frame, f"Confidence Score: {pose_metrics['confidence_score']:.2f}",
-                    (30, Y_START_POSE), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-        cv2.putText(frame, f"Shoulder Tilt: {pose_metrics['shoulder_angle']:.2f}°",
-                    (30, Y_START_POSE + LINE_HEIGHT), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
-        cv2.putText(frame, f"Head Angle: {pose_metrics['head_angle']:.2f}°",
-                    (30, Y_START_POSE + 2 * LINE_HEIGHT), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 100), 2)
-    head_pose_metrics = mp_service.process_head_pose(frame)
+        cv2.putText(frame, status, (margin_x, margin_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, 1)
 
- 
-   
-    # Labels on the right side (to avoid collision with left-side labels)
-    cv2.putText(frame, head_pose_metrics["head_pose_text"], (400, Y_START_HEAD), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-    x_angle = f"{head_pose_metrics['x_angle']:.2f}" if head_pose_metrics['x_angle'] is not None else "--"
-    y_angle = f"{head_pose_metrics['y_angle']:.2f}" if head_pose_metrics['y_angle'] is not None else "--"
-    z_angle = f"{head_pose_metrics['z_angle']:.2f}" if head_pose_metrics['z_angle'] is not None else "--"
-    cv2.putText(frame, f"x: {x_angle}", (500, Y_START_HEAD + LINE_HEIGHT), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-    cv2.putText(frame, f"y: {y_angle}", (500, Y_START_HEAD + 2 * LINE_HEIGHT), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-    cv2.putText(frame, f"z: {z_angle}", (500, Y_START_HEAD + 3 * LINE_HEIGHT), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+    def print_pose_stats(self,frame, pose_metrics):
+        h, w = frame.shape[:2]
+        margin_x = int(w * 0.01)
+        margin_y = int(h * 0.04)
+        font_scale = max(0.2, min(0.4, h / 1000.0))
+        line_height = int(h * 0.042)
+        if pose_metrics["confidence_score"] is not None:
+            score = pose_metrics["confidence_score"]
+            if score==1.0:
+                color = (0, 255, 0)
+            elif score >= 0.8:
+                color = (255, 0, 0)  # Blue
+            elif score <= 0.6:
+                color = (0, 0, 255)  # Red
+            else:
+                color = (0, 255, 0)  # Green
+            cv2.putText(frame, f"Posture Score: {score:.2f}",
+                        (margin_x, margin_y + line_height), cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, 1)
+            # Shoulder Tilt and Head Angle lines are commented out as per your last change
+            # cv2.putText(frame, f"Shoulder Tilt: {pose_metrics['shoulder_angle']:.2f}°",
+            #            (margin_x, margin_y + 2 * line_height), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 0), 1)
+            # cv2.putText(frame, f"Head Angle: {pose_metrics['head_angle']:.2f}°",
+            #            (margin_x, margin_y + 3 * line_height), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 200, 100), 1)
 
-    mp_service.draw_pose_landmarks(frame)
-    mp_service.draw_face_landmarks(frame)
-    cv2.imshow("MediaPipe Output", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+    def print_head_pose_stats(self,frame, head_pose_metrics):
+        h, w = frame.shape[:2]
+        margin_x = int(w * 0.01)
+        margin_y = int(h * 0.01)
+        font_scale = max(0.2, min(0.4, h / 1000.0))
+        line_height = int(h * 0.045)
+        # Color logic: green if straight, red otherwise
+        is_straight = head_pose_metrics["head_pose_text"] == "Looking Straight"
+        label_color = (0, 255, 0) if is_straight else (0, 0, 255)
+        angle_color = (0, 0, 255) if not is_straight else (255, 0, 0)
+        # Head pose text below pose stats
+        cv2.putText(frame, head_pose_metrics["head_pose_text"], (margin_x, margin_y + 3 * line_height), cv2.FONT_HERSHEY_SIMPLEX, font_scale, label_color, 1)
+        x_angle = f"{head_pose_metrics['x_angle']:.2f}" if head_pose_metrics['x_angle'] is not None else "--"
+        y_angle = f"{head_pose_metrics['y_angle']:.2f}" if head_pose_metrics['y_angle'] is not None else "--"
+        z_angle = f"{head_pose_metrics['z_angle']:.2f}" if head_pose_metrics['z_angle'] is not None else "--"
+        #cv2.putText(frame, f"x: {x_angle}", (margin_x, margin_y + 5 * line_height), cv2.FONT_HERSHEY_SIMPLEX, font_scale, angle_color, 1)
+        #cv2.putText(frame, f"y: {y_angle}", (margin_x, margin_y + 6 * line_height), cv2.FONT_HERSHEY_SIMPLEX, font_scale, angle_color, 1)
+        #cv2.putText(frame, f"z: {z_angle}", (margin_x, margin_y + 7 * line_height), cv2.FONT_HERSHEY_SIMPLEX, font_scale, angle_color, 1)
 
-cap.release()
-cv2.destroyAllWindows()
+    def print_final_score(self,frame, final_score):
+        h, w = frame.shape[:2]
+        margin_x = int(w * 0.01)
+        margin_y = int(h * 0.01)
+        font_scale = max(0.2, min(0.4, h / 1000.0))
+        line_height = int(h * 0.045)
+        # Place final score below head pose stats
+        cv2.putText(frame, f"Final Score: {final_score:.2f}", (margin_x, margin_y + 5 * line_height), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 1), 1)
+
+    def get_average_point(self,landmarks, indices, shape):
+        h, w = shape
+        points = np.array([[landmarks[i].x * w, landmarks[i].y * h] for i in indices])
+        return np.mean(points, axis=0)
+
+    def compute_eye_contact(self,iris_center, eye_corners):
+        left_corner, right_corner = eye_corners
+        eye_center = (left_corner + right_corner) / 2
+        eye_width = np.linalg.norm(right_corner - left_corner)
+        deviation = np.linalg.norm(iris_center - eye_center) / eye_width
+        return deviation < 0.15  # Tunable threshold
+
+
+    def detect_eye_contact(self,frame, landmarks):
+        LEFT_EYE_INDICES = [33, 133]
+        RIGHT_EYE_INDICES = [362, 263]
+        LEFT_IRIS_INDICES = [468, 469, 470, 471]
+        RIGHT_IRIS_INDICES = [473, 474, 475, 476]
+
+        h, w, _ = frame.shape
+
+        left_iris_center = self.get_average_point(landmarks, LEFT_IRIS_INDICES, (h, w))
+        right_iris_center = self.get_average_point(landmarks, RIGHT_IRIS_INDICES, (h, w))
+
+        left_eye_corners = [np.array([landmarks[i].x * w, landmarks[i].y * h]) for i in LEFT_EYE_INDICES]
+        right_eye_corners = [np.array([landmarks[i].x * w, landmarks[i].y * h]) for i in RIGHT_EYE_INDICES]
+
+        left_eye_contact = self.compute_eye_contact(left_iris_center, left_eye_corners)
+        right_eye_contact = self.compute_eye_contact(right_iris_center, right_eye_corners)
+
+        overall_eye_contact = left_eye_contact and right_eye_contact
+
+        return overall_eye_contact, left_eye_corners, right_eye_corners, left_iris_center, right_iris_center
+    def draw_eye_contact_info(self,frame, eye_contact, left_eye_corners, right_eye_corners, left_iris_center, right_iris_center):
+        for pt in left_eye_corners + right_eye_corners:
+            cv2.circle(frame, tuple(np.int32(pt)), 2, (0, 255, 255), -1)
+        cv2.circle(frame, tuple(np.int32(left_iris_center)), 3, (0, 0, 255), -1)
+        cv2.circle(frame, tuple(np.int32(right_iris_center)), 3, (0, 0, 255), -1)
+
+        text = "Looking at Camera" if eye_contact else "Not Looking"
+        color = (0, 255, 0) if eye_contact else (0, 0, 255)
+        cv2.putText(frame, text, (30, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
