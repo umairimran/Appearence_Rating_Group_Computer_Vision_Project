@@ -123,11 +123,12 @@ class MediaPipeService:
                 self.real_smile_active = False
 
         return self.real_smile_active, smile_score
-
+    
     def euclidean(self, p1, p2):
          return np.linalg.norm(np.array(p1) - np.array(p2))
     def _to_pixel_coords(self, landmark, image_w, image_h):
         return np.array([landmark.x * image_w, landmark.y * image_h])
+   
     def _shoulder_tilt_angle(self, l_shoulder, r_shoulder):
         dx = r_shoulder[0] - l_shoulder[0]
         dy = r_shoulder[1] - l_shoulder[1]
@@ -164,9 +165,22 @@ class MediaPipeService:
             score -= 0.4
         return min(max(score, 0.0), 1.0)
     def _confidence_score(self, shoulder_angle, head_angle):
-        ps = self._posture_score(shoulder_angle)
+        # Get raw posture scores (e.g., 0.0 to 1.0)
+        ps = self._posture_score(shoulder_angle)  # Should be float like 0.6, 0.9 etc
         hs = self._head_score(head_angle)
-        return round((0.5 * ps + 0.5 * hs), 2)
+
+        # Convert to pass/fail using threshold
+        posture_pass = ps >= 0.75
+        head_pass = hs >= 0.75
+
+        # Scoring logic
+        if posture_pass and head_pass:
+            return 1.0
+        elif posture_pass or head_pass:
+            return 0.5
+        else:
+            return 0.0
+
 
     def pose_detection(self,frame):
         POSE_LANDMARKS = {
@@ -308,8 +322,7 @@ class MediaPipeService:
                 "head_pose_score": 0.0
             }
 
-    def calculate_final_score(self,smile_score, simile_active, pose_confidence, head_pose_text):
-    
+    def calculate_final_score(self, smile_score, simile_active, confidence_score, head_pose_text, eye_contact):
         # Normalize smile_score (max 3.5 based on your smile detection logic)
         norm_smile_score = min(smile_score / 1.5, 1.0)
 
@@ -317,20 +330,21 @@ class MediaPipeService:
         smile_active_score = 1.0 if simile_active else 0.0
 
         # Pose confidence is already normalized (assume it's one of 0.6, 0.8, 1.0)
-        confidence_score = min(max(pose_confidence, 0.0), 1.0)
+        confidence_score = min(max(confidence_score, 0.0), 1.0)
 
         # Head pose score: 1.0 only if looking straight
         head_pose_score = 1.0 if head_pose_text == "Looking Straight" else 0.0
-
+        eye_contact_score = 1.0 if eye_contact else 0.0
         # Weighted final score calculation
         final_score = (
             0.3 * norm_smile_score +
             0.1 * smile_active_score +
-            0.4 * confidence_score +
-            0.2 * head_pose_score
+            0.3 * confidence_score +
+            0.2 * head_pose_score +
+            0.1 * eye_contact_score
         )
 
-        return round(final_score, 2),norm_smile_score,smile_active_score,confidence_score,head_pose_score
+        return round(final_score, 2), norm_smile_score, smile_active_score, confidence_score, head_pose_score, eye_contact_score
 
 
     def print_smile_status(self,frame, simile_active, smile_score):
@@ -394,36 +408,58 @@ class MediaPipeService:
         # Place final score below head pose stats
         cv2.putText(frame, f"Final Score: {final_score:.2f}", (margin_x, margin_y + 5 * line_height), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 1), 1)
 
-    def get_average_point(self,landmarks, indices, shape):
+    def get_average_point(self, landmarks, indices, shape):
         h, w = shape
         points = np.array([[landmarks[i].x * w, landmarks[i].y * h] for i in indices])
         return np.mean(points, axis=0)
 
-    def compute_eye_contact(self,iris_center, eye_corners):
+
+    def compute_eye_aspect_ratio(self, eye_indices, landmarks, shape):
+        h, w = shape
+        eye = [np.array([landmarks[i].x * w, landmarks[i].y * h]) for i in eye_indices]
+        vertical = np.linalg.norm(eye[0] - eye[1])     # upper to lower
+        horizontal = np.linalg.norm(eye[2] - eye[3])   # left to right
+        return vertical / (horizontal + 1e-6)
+
+    def compute_eye_contact(self, iris_center, eye_corners):
         left_corner, right_corner = eye_corners
         eye_center = (left_corner + right_corner) / 2
         eye_width = np.linalg.norm(right_corner - left_corner)
-        deviation = np.linalg.norm(iris_center - eye_center) / eye_width
-        return deviation < 0.15  # Tunable threshold
 
+        dx = abs(iris_center[0] - eye_center[0]) / eye_width
+        dy = abs(iris_center[1] - eye_center[1]) / eye_width
 
-    def detect_eye_contact(self,frame, landmarks):
+        return dx < 0.15 and dy < 0.15
+
+    def detect_eye_contact(self, frame, landmarks):
+
         LEFT_EYE_INDICES = [33, 133]
         RIGHT_EYE_INDICES = [362, 263]
         LEFT_IRIS_INDICES = [468, 469, 470, 471]
         RIGHT_IRIS_INDICES = [473, 474, 475, 476]
-
+        LEFT_LID_INDICES = [159, 145, 33, 133]     # (upper, lower, left, right)
+        RIGHT_LID_INDICES = [386, 374, 362, 263]
+        EYE_CLOSED_THRESHOLD = 0.2  # Tunable
         h, w, _ = frame.shape
 
+        # Check if eyes are closed
+        left_ear = self.compute_eye_aspect_ratio(LEFT_LID_INDICES, landmarks, (h, w))
+        right_ear = self.compute_eye_aspect_ratio(RIGHT_LID_INDICES, landmarks, (h, w))
+
+        if left_ear < EYE_CLOSED_THRESHOLD and right_ear < EYE_CLOSED_THRESHOLD:
+            return False, None, None, None, None
+
+        # Get iris centers
         left_iris_center = self.get_average_point(landmarks, LEFT_IRIS_INDICES, (h, w))
         right_iris_center = self.get_average_point(landmarks, RIGHT_IRIS_INDICES, (h, w))
 
+        # Get eye corners
         left_eye_corners = [np.array([landmarks[i].x * w, landmarks[i].y * h]) for i in LEFT_EYE_INDICES]
         right_eye_corners = [np.array([landmarks[i].x * w, landmarks[i].y * h]) for i in RIGHT_EYE_INDICES]
 
+        # Eye contact logic
         left_eye_contact = self.compute_eye_contact(left_iris_center, left_eye_corners)
         right_eye_contact = self.compute_eye_contact(right_iris_center, right_eye_corners)
-
         overall_eye_contact = left_eye_contact and right_eye_contact
 
         return overall_eye_contact, left_eye_corners, right_eye_corners, left_iris_center, right_iris_center
@@ -436,3 +472,125 @@ class MediaPipeService:
         text = "Looking at Camera" if eye_contact else "Not Looking"
         color = (0, 255, 0) if eye_contact else (0, 0, 255)
         cv2.putText(frame, text, (30, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
+
+
+    def draw_eye_contact_status(self, frame, eye_contact_result, line_offset=2):
+        """
+        Dynamically prints eye contact status on the frame with adjustable vertical position.
+        `line_offset`: how many lines down to push the text (each line ≈ 5% screen height)
+        """
+        h, w = frame.shape[:2]
+        margin_x = int(w * 0.01)
+        margin_y = int(h * 0.02)
+        font_scale = max(0.2, min(0.4, h / 1000.0))
+        line_height = int(h * 0.05)
+        # Status text and color
+        if eye_contact_result == "Eyes Closed":
+            text = "Eyes Closed"
+            color = (255, 0, 0)  # Blue
+        elif eye_contact_result == True:
+            text = "Looking at Camera"
+            color = (0, 255, 0)  
+        else:
+            text = "Not Looking"
+            color = (0, 0, 255)  
+        # Dynamic Y-position based on line offset
+        y_position = margin_y + line_height * 5
+        # Draw text on frame
+        cv2.putText(frame, f"Eye Contact: {text}",
+                    (margin_x, y_position),
+                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, 1)
+    def draw_live_bars(self,frame, scores_dict, origin=None, bar_width=None, bar_height=None, spacing=None):
+        """
+        Draws horizontal score bars on the frame, with dynamic sizing and positioning based on frame size.
+        """
+        h, w = frame.shape[:2]
+        if bar_width is None:
+            bar_width = int(w * 0.25)
+        if bar_height is None:
+            bar_height = int(h * 0.03)
+        if spacing is None:
+            spacing = int(h * 0.05)
+        if origin is None:
+            x, y = int(w * 0.02), int(h * 0.4)
+        else:
+            x, y = origin
+
+        num_bars = len(scores_dict)
+        total_height = num_bars * bar_height + (num_bars - 1) * spacing
+        # Adjust y if bars would overflow
+        if y + total_height > h:
+            y = max(int(h - total_height - h * 0.02), int(h * 0.02))
+
+        for label, value in scores_dict.items():
+            value = max(0.0, min(1.0, value))
+            cv2.rectangle(frame, (x, y), (x + bar_width, y + bar_height), (60, 60, 60), -1)
+            bar_color = (0, 255, 0) if value >= 0.7 else (0, 165, 255) if value >= 0.4 else (0, 0, 255)
+            cv2.rectangle(frame, (x, y), (x + int(bar_width * value), y + bar_height), bar_color, -1)
+            cv2.putText(frame, f"{label}: {value:.2f}", (x + bar_width + int(w*0.01), y + bar_height - int(h*0.005)),
+                        cv2.FONT_HERSHEY_SIMPLEX, max(0.4, min(0.7, h / 1000.0)), (13, 94, 166), 1)
+            y += spacing
+    def draw_single_line_graph(self,frame, values, label, origin=None, size=None, color=(0, 255, 0)):
+        """
+        Draws a single line graph on the frame at the given origin, with dynamic sizing.
+        """
+        h, w = frame.shape[:2]
+        if origin is None:
+            x0, y0 = int(w * 0.7), int(h * 0.05)
+        else:
+            x0, y0 = origin
+        if size is None:
+            graph_w, graph_h = int(w * 0.15), int(h * 0.12)
+        else:
+            graph_w, graph_h = size
+        # Draw background
+        cv2.rectangle(frame, (x0, y0), (x0 + graph_w, y0 + graph_h), (30, 30, 30), -1)
+        # Draw the graph line
+        series = values[-graph_w:]
+        if len(series) >= 2:
+            points = []
+            for i, v in enumerate(series):
+                x = x0 + i
+                y = int(y0 + (1.0 - v) * graph_h)  # Inverted Y
+                points.append((x, y))
+            for i in range(1, len(points)):
+                cv2.line(frame, points[i - 1], points[i], color, 1)
+        # Draw label
+        cv2.putText(frame, label, (x0 + 5, y0 + int(graph_h * 0.25)), cv2.FONT_HERSHEY_SIMPLEX, max(0.4, min(0.7, h / 1000.0)), color, 1)
+    def draw_labeled_line_graph(self,frame, values, label, origin=None, size=None, color=(0, 255, 0)):
+        """
+        Draws a clean line graph with X/Y axis and labels directly on the OpenCV frame, with dynamic sizing.
+        """
+        h, w = frame.shape[:2]
+        if origin is None:
+            x0, y0 = int(w * 0.7), int(h * 0.05)
+        else:
+            x0, y0 = origin
+        if size is None:
+            graph_w, graph_h = int(w * 0.15), int(h * 0.15)
+        else:
+            graph_w, graph_h = size
+        # Y-axis (0 to 1 score line)
+        cv2.line(frame, (x0, y0), (x0, y0 + graph_h), (200, 200, 200), 1)
+        # X-axis (time)
+        cv2.line(frame, (x0, y0 + graph_h), (x0 + graph_w, y0 + graph_h), (200, 200, 200), 1)
+        # Y-axis labels
+        for i in range(0, 11):  # 0.0 to 1.0 with step of 0.1
+            y_val = i / 10.0
+            y = int(y0 + graph_h - y_val * graph_h)
+            label_y = f"{y_val:.1f}"
+            cv2.putText(frame, label_y, (x0 - int(w*0.025), y + int(h*0.005)), cv2.FONT_HERSHEY_PLAIN, max(0.5, min(0.8, h / 800.0)), (150, 150, 150), 1)
+        # X-axis ticks (up to graph_w values)
+        max_points = graph_w - 10
+        step = max(1, len(values) // max_points)
+        series = values[-max_points::step]
+        # Draw the line
+        if len(series) >= 2:
+            for i in range(1, len(series)):
+                x1 = x0 + 10 + (i - 1)
+                y1 = int(y0 + graph_h - series[i - 1] * graph_h)
+                x2 = x0 + 10 + i
+                y2 = int(y0 + graph_h - series[i] * graph_h)
+                cv2.line(frame, (x1, y1), (x2, y2), color, 1)
+        # Label
+        cv2.putText(frame, label, (x0 + 5, y0 - int(h*0.01)), cv2.FONT_HERSHEY_SIMPLEX, max(0.5, min(0.8, h / 800.0)), color, 1)

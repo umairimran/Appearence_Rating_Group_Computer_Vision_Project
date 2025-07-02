@@ -1,97 +1,92 @@
-import cv2
-import time
-import matplotlib.pyplot as plt
-from Media_Pipe_Service import MediaPipeService
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks
+import shutil
+import os
+from helper_functions import run_video_analysis, normalize_filename
+import json
+from fastapi.responses import JSONResponse
+from fastapi import HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # React dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+UPLOAD_DIR = "uploaded_videos"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+def get_indexed_filename(base_name: str, ext: str, directory: str) -> str:
+    index = 0
+    while True:
+        candidate = f"{base_name}_{index}{ext}"
+        if not os.path.exists(os.path.join(directory, candidate)):
+            return candidate
+        index += 1
 
-def print_smile_status(frame, simile_active, smile_score, y_start):
-    status = f"Smiling 😄 (Score: {smile_score:.2f})" if simile_active else f"Not Smiling 😐 (Score: {smile_score:.2f})"
-    color = (0, 255, 0) if simile_active else (0, 0, 255)
-    cv2.putText(frame, status, (30, y_start), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+@app.post("/upload/")
+async def upload_video(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-def print_pose_stats(frame, pose_metrics, y_start, line_height):
-    if pose_metrics["confidence_score"] is not None:
-        cv2.putText(frame, f"Confidence Score: {pose_metrics['confidence_score']:.2f}",
-                    (30, y_start), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-        cv2.putText(frame, f"Shoulder Tilt: {pose_metrics['shoulder_angle']:.2f}°",
-                    (30, y_start + line_height), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
-        cv2.putText(frame, f"Head Angle: {pose_metrics['head_angle']:.2f}°",
-                    (30, y_start + 2 * line_height), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 100), 2)
+    # Normalize and split filename
+    original_name, ext = os.path.splitext(normalize_filename(file.filename))
+    
+    # Get unique filename based on file count/index
+    unique_filename = get_indexed_filename(original_name, ext, UPLOAD_DIR)
+    file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
-def print_head_pose_stats(frame, head_pose_metrics, y_start, line_height):
-    cv2.putText(frame, head_pose_metrics["head_pose_text"], (400, y_start), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-    x_angle = f"{head_pose_metrics['x_angle']:.2f}" if head_pose_metrics['x_angle'] is not None else "--"
-    y_angle = f"{head_pose_metrics['y_angle']:.2f}" if head_pose_metrics['y_angle'] is not None else "--"
-    z_angle = f"{head_pose_metrics['z_angle']:.2f}" if head_pose_metrics['z_angle'] is not None else "--"
-    cv2.putText(frame, f"x: {x_angle}", (500, y_start + line_height), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-    cv2.putText(frame, f"y: {y_angle}", (500, y_start + 2 * line_height), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-    cv2.putText(frame, f"z: {z_angle}", (500, y_start + 3 * line_height), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+    # Save the uploaded file
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
-def print_final_score(frame, final_score, y_start):
-    cv2.putText(frame, f"Final Score: {final_score:.2f}", (30, y_start), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+    # Background task
+    background_tasks.add_task(run_video_analysis, file_path)
 
-cap = cv2.VideoCapture(0)
-mp_service = MediaPipeService()
+    # Return base filename (no extension)
+    return {"status": "processing started", "filename": os.path.splitext(unique_filename)[0]}
 
-cv2.namedWindow("MediaPipe Output", cv2.WND_PROP_FULLSCREEN)
-cv2.setWindowProperty("MediaPipe Output", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+@app.get("/status/{video_id}")
+async def get_status(video_id: str):
+    file_path = os.path.join(UPLOAD_DIR, f"{video_id}_results.json")
+    print(file_path)
+    if not os.path.exists(file_path):
+        print("not found")
+        return {"status": "not found"}
+    print("found")
+    return {"status": "done"}
 
-LINE_HEIGHT = 30
-Y_START_SMILE = 40
-Y_START_POSE = 120
-Y_START_HEAD = 240
-timestamps = []
-final_scores = []
-smile_scores = []
-smile_active_scores = []
-confidence_scores = []
-head_pose_scores = []
-start_time = time.time()
-last_logged_second = -1
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-    mp_service.process_face(frame)
-    mp_service.process_pose(frame)
-    if mp_service.face_results and mp_service.face_results.multi_face_landmarks:
-        for face_landmarks in mp_service.face_results.multi_face_landmarks:
-            simile_active,smile_score=mp_service.detect_smile(face_landmarks.landmark, frame.shape[1], frame.shape[0],frame)
-        print_smile_status(frame, simile_active, smile_score, Y_START_SMILE)
-    pose_metrics=mp_service.pose_detection(frame)    
-    print_pose_stats(frame, pose_metrics, Y_START_POSE, LINE_HEIGHT)
-    head_pose_metrics = mp_service.process_head_pose(frame)
-    print_head_pose_stats(frame, head_pose_metrics, Y_START_HEAD, LINE_HEIGHT)
-    final_score,norm_smile_score,smile_active_score,confidence_score,head_pose_score= mp_service.calculate_final_score(smile_score, simile_active, pose_metrics["confidence_score"], head_pose_metrics["head_pose_text"])
-    print_final_score(frame, final_score, Y_START_HEAD + 4 * LINE_HEIGHT)
-    mp_service.draw_pose_landmarks(frame)
-    mp_service.draw_face_landmarks(frame)
-    cv2.imshow("MediaPipe Output", frame)
+@app.get("/results/{filename}")
+async def get_results(filename: str):
+    if not filename.endswith(".json"):
+        filename += "_results.json"
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Results file not found")
+    with open(file_path, "r") as f:
+        data = json.load(f)
+    return JSONResponse(content=data)
 
-    current_time = time.time() - start_time
-    current_second = int(current_time)
 
-    if current_second != last_logged_second:
-        last_logged_second = current_second  # Update tracker
-        final_score, norm_smile_score, smile_active_score, confidence_score, head_pose_score = mp_service.calculate_final_score(
-            smile_score, simile_active, pose_metrics["confidence_score"], head_pose_metrics["head_pose_text"]
-        )
-        timestamps.append(current_second)
-        final_scores.append(final_score)
-        smile_scores.append(norm_smile_score)
-        smile_active_scores.append(smile_active_score)
-        confidence_scores.append(confidence_score)
-        head_pose_scores.append(head_pose_score)
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-cap.release()
-cv2.destroyAllWindows()
-# Plotting the scores
-plt.figure(figsize=(12, 6))
-plt.plot(timestamps, final_scores, label='Final Score', color='blue')
-plt.legend()
-plt.xlabel('Time (seconds)')
-plt.ylabel('Score')
-plt.title('Scores Over Time')
-plt.show()
+@app.get("/video/{filename}")
+async def get_video(filename: str):
+    # Convert uploaded filename (e.g., video.mp4) to analyzed filename (video_analyzed.mp4)
+    if filename.endswith(".mp4"):
+        analyzed_name = filename.replace(".mp4", "_analyzed.mp4")
+    else:
+        analyzed_name = filename + "_analyzed.mp4"
 
+    file_path = os.path.join("processed", analyzed_name)
+    print("Serving video file:", file_path)
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Video file not found")
+
+    return FileResponse(path=file_path, media_type="video/mp4", filename=analyzed_name)
+
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
