@@ -9,6 +9,36 @@ node_modules
 /build
 venv2
 /Temp
+# Ignore all model weights
+*.pt
+
+# Ignore all images
+*.jpg
+*.jpeg
+*.png
+
+# Ignore face/person crops and scored results
+Module2/cropped_faces/
+Module2/cropped_people/
+Module2/scored_people/
+Module2/groupPhotos/
+groupPhotos/
+
+# Ignore tasks and models
+*.task
+
+# Ignore temp files
+*.tmp
+*.temp
+*.log
+Module2/temp_rejected.jpg
+inference_feedback_manager.cc
+
+# Ignore certificates
+*.pem
+
+# Ignore venv
+venv*/
 
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
