@@ -1,69 +1,56 @@
-venv
-venv311
-video.mp4
-image.jpg
-__pycache__
-node_modules
-/uploaded_videos
-/processed
-/build
-venv2
-/Temp
-# Ignore all model weights
-*.pt
+# Python virtual environments
+venv*/
+__pycache__/
 
-# Ignore all images
+# Ignore model weights
+*.pt
+*.task
+
+# Ignore images and videos (global)
 *.jpg
 *.jpeg
 *.png
+*.mp4
 
-# Ignore face/person crops and scored results
+# Ignore face/person crops and outputs
 Module2/cropped_faces/
 Module2/cropped_people/
 Module2/scored_people/
 Module2/groupPhotos/
 groupPhotos/
+scored_people/
+processed/
+uploaded_videos/
+Videos/
+Temp/
 
-# Ignore tasks and models
-*.task
+# Ignore frontend/node artifacts
+node_modules/
+.pnp
+.pnp.js
 
-# Ignore temp files
+# Ignore certs and temp/debug artifacts
+*.pem
 *.tmp
 *.temp
 *.log
-Module2/temp_rejected.jpg
 inference_feedback_manager.cc
 
-# Ignore certificates
-*.pem
+# Ignore Gradio certificates or test files
+Module2/.gradio/
 
-# Ignore venv
-venv*/
+# Build and test folders
+build/
+coverage/
 
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Environment files
+.env
+.env.*.local
 
-# dependencies
-node_modules
-/.pnp
-.pnp.js
-
-# testing
-/coverage
-
-# production
-/build
-
-# misc
+# OS-specific
 .DS_Store
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
+# Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-*.mp4
-processed/*
-uploaded_videos/*
