@@ -1,0 +1,17 @@
+{
+  "person_file": "person_6.jpg",
+  "final_score": 0.8,
+  "smile_score": 1.0,
+  "smile_active": 1.0,
+  "confidence_score": 1.0,
+  "head_pose_score": 0.0,
+  "eye_contact": 1.0,
+  "pose_stats": {
+    "shoulder_angle": 0.85,
+    "head_angle": 81.49,
+    "posture_score": 1.0,
+    "head_score": 1.0,
+    "confidence_score": 1.0
+  },
+ "head_pose_text": "Looking Up"
+}

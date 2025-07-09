@@ -1,4 +1,5 @@
 venv
+venv311
 video.mp4
 image.jpg
 __pycache__
@@ -6,7 +7,7 @@ node_modules
 /uploaded_videos
 /processed
 /build
-
+venv2
 /Temp
 
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.

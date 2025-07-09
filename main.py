@@ -24,15 +24,12 @@ def get_indexed_filename(base_name: str, ext: str, directory: str) -> str:
         if not os.path.exists(os.path.join(directory, candidate)):
             return candidate
         index += 1
-
 @app.post("/upload/")
 async def upload_video(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-    # Normalize and split filename
-    original_name, ext = os.path.splitext(normalize_filename(file.filename))
     
-    # Get unique filename based on file count/index
+    original_name, ext = os.path.splitext(normalize_filename(file.filename))
+
     unique_filename = get_indexed_filename(original_name, ext, UPLOAD_DIR)
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
 

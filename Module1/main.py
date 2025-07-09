@@ -2,7 +2,7 @@ import cv2
 import time
 import statistics
 import matplotlib.pyplot as plt
-from Media_Pipe__Service import MediaPipeService
+from testing_media_pipe import MediaPipeService
 # Initialize video capture and MediaPipe service
 cap = cv2.VideoCapture("video2.mp4")
 mp_service = MediaPipeService()
@@ -30,7 +30,6 @@ while True:
 
     simile_active, smile_score = 0, 0
     eye_contact = 0
-
     # Face landmark-based detections
     if mp_service.face_results and mp_service.face_results.multi_face_landmarks:
         for face_landmarks in mp_service.face_results.multi_face_landmarks:
@@ -46,8 +45,9 @@ while True:
 
     # Pose and head pose metrics
     pose_metrics = mp_service.pose_detection(frame)
+   
     head_pose_metrics = mp_service.process_head_pose(frame)
-
+    print(head_pose_metrics)
     # Normalize posture confidence
     pose_confidence = pose_metrics["confidence_score"] or 0.0
     confidence_score = min(max(pose_confidence, 0.0), 1.0)
@@ -56,7 +56,7 @@ while True:
     final_score, norm_smile_score, smile_active_score, confidence_score, head_pose_score, eye_contact = mp_service.calculate_final_score(
         smile_score, simile_active, confidence_score, head_pose_metrics["head_pose_text"], eye_contact
     )
-
+    
     # Logging scores per second
     current_time = time.time() - start_time
     current_second = (current_time)
@@ -79,11 +79,11 @@ while True:
     mp_service.print_pose_stats(frame, pose_metrics)
     mp_service.print_head_pose_stats(frame, head_pose_metrics)
     mp_service.print_final_score(frame, final_score)
-
+  
     # Live bar drawing
     mp_service.draw_live_bars(frame, {
-        "Final": final_score,
-        "Smile": norm_smile_score,
+        "Final": (final_score),
+        "Smile": smile_score,
         "Active Smile": smile_active_score,
         "Posture Score": confidence_score,
         "Head Straight": head_pose_score,
@@ -107,14 +107,14 @@ cv2.destroyAllWindows()
 
 # ==================== 📊 FINAL PLOT ====================
 
-average_confidence = statistics.mean(final_scores)
+average_confidence = (statistics.mean(final_scores))
 total_duration = timestamps[-1] if timestamps else 0
 
 plt.figure(figsize=(12, 6))
 plt.plot(timestamps, final_scores, label='Final Score', color='blue')
 plt.axhline(y=average_confidence, color='gray', linestyle='--', label=f'Avg: {average_confidence:.2f}')
 plt.text(timestamps[-1], average_confidence + 0.01, f'Avg: {average_confidence:.2f}', fontsize=10, color='gray')
-plt.text(0, min(final_scores) - 0.05, f'Total Time: {total_duration:.2f} sec', fontsize=10, color='black')
+plt.text(0, (min(final_scores)) - 0.05, f'Total Time: {total_duration:.2f} sec', fontsize=10, color='black')
 
 plt.title('Final Score Over Time')
 plt.xlabel('Time (seconds)')

@@ -1,0 +1,17 @@
+{
+  "person_file": "person_8.jpg",
+  "final_score": 0.3,
+  "smile_score": 0.6666666666666666,
+  "smile_active": 0.0,
+  "confidence_score": 0.0,
+  "head_pose_score": 0.0,
+  "eye_contact": 1.0,
+  "pose_stats": {
+    "shoulder_angle": 21.4,
+    "head_angle": 118.52,
+    "posture_score": 0.6,
+    "head_score": 0.6,
+    "confidence_score": 0.0
+  },
+  "head_pose_text": "Looking Left"
+}
