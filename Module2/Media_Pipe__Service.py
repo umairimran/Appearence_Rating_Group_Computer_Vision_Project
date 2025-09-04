@@ -4,7 +4,12 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import  time
-
+import google.generativeai as genai
+from pathlib import Path
+from PIL import Image
+import uuid
+import json
+import re
 
 class MediaPipeService:
     def __init__(self):
@@ -591,14 +596,8 @@ class MediaPipeService:
         # Label
         cv2.putText(frame, label, (x0 + 5, y0 - int(h*0.01)), cv2.FONT_HERSHEY_SIMPLEX, max(0.5, min(0.8, h / 800.0)), color, 1)
 
-
-
-    import os
-    import time
-    import cv2
-    import numpy as np
-
     def save_eye_contact_visual(self, frame, eye_contact, left_eye_corners, right_eye_corners, left_iris_center, right_iris_center, save_dir="eye_contact_outputs"):
+        import os
         os.makedirs(save_dir, exist_ok=True)
 
         # Create a copy of the frame to draw on
@@ -623,3 +622,131 @@ class MediaPipeService:
         cv2.imwrite(filepath, annotated)
         print(f"[EyeContact] Saved visualization at: {filepath}")
 
+
+    def extract_dress_colors(self,image: Image.Image,API_KEY:str) -> dict:
+        """
+        Extracts top and bottom clothing color (hex + name) from a person image using Gemini.
+        Returns JSON with:
+        {
+            "top_color": { "hex": "#RRGGBB", "name": "color name" },
+            "bottom_color": { "hex": "#RRGGBB", "name": "color name" }
+        }
+        """
+        model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite-preview-06-17")
+        # Configure Gemini
+        genai.configure(api_key=API_KEY)
+
+        try:
+            # Save temp image file
+            temp_path = Path(f"temp_{uuid.uuid4().hex}.jpg")
+            if isinstance(image, np.ndarray):
+                image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+            image.save(temp_path)
+
+            # Upload to Gemini
+            uploaded_file = genai.upload_file(temp_path)
+
+            # Strict prompt
+            prompt = (
+                "You are an expert in clothing and visual color analysis. "
+                "You are given an image of one person. Your task is to determine the dominant clothing colors of the person.\n\n"
+
+                "Please return the results strictly in the following JSON format:\n"
+                "{\n"
+                '  "top_color": { "hex": "#RRGGBB", "name": "color name" },\n'
+                '  "bottom_color": { "hex": "#RRGGBB", "name": "color name" }\n'
+                "}\n\n"
+
+                "Instructions:\n"
+                "- First, identify the clothing region of the upper and lower body.\n"
+                "- If the person is wearing a single-piece outfit (like a dress), return the same color for both top and bottom.\n"
+                "- Detect the dominant color in each region, and return it as:\n"
+                "  → A HEX code (like #123ABC)\n"
+                "  → A common color name (like 'navy blue', 'light gray', etc.)\n"
+                "- Output only in the strict JSON format shown above. No extra text or explanation.\n"
+            )
+
+            # Get Gemini response
+            result = model.generate_content([uploaded_file, "\n\n", prompt])
+       
+
+            # Extract and clean Gemini text
+            text = result.text.strip()
+
+            # Remove ```json wrapper if present
+            if text.startswith("```json"):
+                text = re.sub(r"^```json\s*", "", text)
+                text = re.sub(r"\s*```$", "", text)
+
+            # Parse JSON safely
+            response_json = json.loads(text)
+            temp_path.unlink(missing_ok=True)
+
+            
+
+            # Validate structure
+            if (
+                "top_color" in response_json and "bottom_color" in response_json and
+                "hex" in response_json["top_color"] and "name" in response_json["top_color"] and
+                "hex" in response_json["bottom_color"] and "name" in response_json["bottom_color"]
+            ):
+                return response_json
+            else:
+                raise ValueError("Invalid format from Gemini")
+
+        except Exception as e:
+            return { "error": str(e) }
+
+
+
+    def generate_gemini_summary(self,avg_posture, eye_contact_percent, active_smile_percent, color_sim, synergy_score, API_KEY, image=None):
+        genai.configure(api_key=API_KEY)
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash-lite")
+
+        try:
+            image_file = None
+            if image is not None:
+                # Convert numpy to PIL if needed
+                if isinstance(image, np.ndarray):
+                    image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+                temp_path = Path(f"temp_summary_{uuid.uuid4().hex}.jpg")
+                image.save(temp_path)
+                image_file = genai.upload_file(temp_path)
+
+            # Prompt
+            prompt = (
+                f"You are an expert in analyzing group photo aesthetics and coordination.\n"
+                f"Use the following metrics:\n"
+                f"- Posture score: {int(avg_posture * 100)}%\n"
+                f"- Eye contact: {eye_contact_percent}%\n"
+                f"- Smiles: {active_smile_percent}%\n"
+                f"- Color similarity: {color_sim}%\n"
+                f"- Synergy score: {synergy_score}/100\n\n"
+                "Write a short, friendly 2–3 sentence summary of the group’s visual harmony and confidence."
+            )
+
+            response = model.generate_content([image_file, prompt] if image_file else [prompt])
+            result_text = response.text.strip()
+
+            # Remove any code fences like ```text
+            if result_text.startswith("```"):
+                result_text = re.sub(r"^```[a-z]*\s*", "", result_text)
+                result_text = re.sub(r"\s*```$", "", result_text)
+
+            # Cleanup temp
+            if image_file:
+                temp_path.unlink(missing_ok=True)
+
+            return {
+                "synergy_score": synergy_score,
+                "color_similarity": color_sim,
+                "posture_score": int(avg_posture * 100),
+                "eye_contact": eye_contact_percent,
+                "active_smiles": active_smile_percent,
+                "summary": result_text
+            }
+
+        except Exception as e:
+            return {
+                "error": str(e)
+            }

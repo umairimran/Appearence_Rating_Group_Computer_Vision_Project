@@ -4,9 +4,105 @@ import numpy as np
 import os
 import tempfile
 import json
-
+from dotenv import load_dotenv
 from Media_Pipe__Service import MediaPipeService
 from main import run_pipeline_from_image
+load_dotenv()
+API_KEY = "AIzaSyA-gsPJ5tLoF7Ok5-83Llab6U5oWI3Xe5E"
+
+
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+
+# Convert hex to RGB tuple
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+# Compute color similarity using cosine similarity between RGB vectors
+def color_similarity_score(color_list):
+    if len(color_list) <= 1:
+        return 100
+    rgb_vectors = [np.array(hex_to_rgb(color)) for color in color_list]
+    sims = []
+    for i in range(len(rgb_vectors)):
+        for j in range(i+1, len(rgb_vectors)):
+            sim = cosine_similarity([rgb_vectors[i]], [rgb_vectors[j]])[0][0]
+            sims.append(sim)
+    avg_sim = np.mean(sims)
+    return int(avg_sim * 100)
+
+# Main group summary generation function
+def generate_group_summary(json_results, image):
+    print(json_results)
+    if not json_results:
+        return {}
+
+    num_people = len(json_results)
+    smile_scores = []
+    eye_contacts = 0
+    posture_scores = []
+    final_scores = []
+    confidences = []
+    head_pose_scores = []
+    top_colors = []
+
+    for person in json_results:
+        # Smile score
+        smile_score = person.get("smile_score", 0)
+        smile_scores.append(smile_score)
+
+        # Eye contact
+        if person.get("eye_contact", 0) == 1:
+            eye_contacts += 1
+
+        # Scores
+        posture_scores.append(person.get("pose_stats", {}).get("posture_score", 0))
+        final_scores.append(person.get("final_score", 0))
+        confidences.append(person.get("confidence_score", 0))
+        head_pose_scores.append(person.get("head_pose_score", 0))
+
+        # Colors
+        top_hex = person.get("cloth_colors", {}).get("top_color", {}).get("hex", "#ffffff")
+        top_colors.append(top_hex)
+
+    # Averages
+    avg_posture = np.mean(posture_scores) if posture_scores else 0
+    avg_final_score = np.mean(final_scores) if final_scores else 0
+    avg_confidence = np.mean(confidences) if confidences else 0
+    avg_head_pose = np.mean(head_pose_scores) if head_pose_scores else 0
+    avg_smile = np.mean(smile_scores) if smile_scores else 0
+    eye_contact_percent = int((eye_contacts / num_people) * 100)
+    smile_percent = int(avg_smile * 100)
+    color_sim = color_similarity_score(top_colors)
+
+    # Group synergy score (average-based estimate)
+    synergy_score = int((avg_posture + avg_confidence + avg_smile + (eye_contact_percent / 100) + (color_sim / 100)) / 5 * 100)
+
+    # Overall aesthetic score (simplified average)
+    overall_aesthetics = int((avg_final_score + avg_confidence + avg_posture + color_sim / 100) / 4 * 100)
+
+    # Human-readable summary
+    mp_service = MediaPipeService()
+    summary_text = mp_service.generate_gemini_summary(
+        avg_posture,
+        eye_contact_percent,
+        smile_percent,
+        color_sim,
+        synergy_score,
+        API_KEY,
+        image
+    )
+
+    return {
+        "group_synergy_score": synergy_score,
+        "color_similarity": color_sim,
+        "posture_scores": int(avg_posture * 100),
+        "eye_contact": eye_contact_percent,
+        "active_smiles": smile_percent,
+        "overall_aesthetics": overall_aesthetics,
+        "summary": summary_text
+    }
 
 # Helper: Convert cv2 image to RGB for Gradio
 def cv2_to_rgb(img):
@@ -100,20 +196,21 @@ def analyze_group_photo(input_image):
             final_score, norm_smile_score, smile_active_score, confidence_score, head_pose_score, eye_contact = mp_service.calculate_final_score(
                 smile_score, smile_active, confidence_score, head_pose_score, eye_contact
             )
-
+            cloth_colors = mp_service.extract_dress_colors(person_img,API_KEY)
             result_json = {
                 "person_index": idx,
                 "person_file": person_file,
                 "final_score": final_score,
                 "smile_score": norm_smile_score,
-                "smile_active": smile_active_score,
+                
                 "confidence_score": confidence_score,
                 "head_pose_score": head_pose_score,
                 "eye_contact": eye_contact,
                 "pose_stats": pose_metrics,
                 "head_pose_text": head_pose_text,
                 "dist_left": dist_left,
-                "dist_right": dist_right
+                "dist_right": dist_right,
+                "cloth_colors": cloth_colors
             }
             json_results.append(result_json)
 
@@ -126,9 +223,16 @@ def analyze_group_photo(input_image):
 
         # Convert the input image to RGB for Gradio
         rgb_input = cv2_to_rgb(input_image)
-        
+        group_summary = generate_group_summary(json_results,rgb_input)
+        print("Group Summary Here Printing")
+        print(group_summary)
         # Return all required data
-        return [rgb_input, person_images, face_images, json_results, json_results]
+        summary_value = group_summary.get("summary", "")
+        if isinstance(summary_value, dict):
+            summary_value = summary_value.get("summary") or summary_value.get("error") or str(summary_value)
+        elif not isinstance(summary_value, str):
+            summary_value = str(summary_value)
+        return [rgb_input, person_images, face_images, json_results, json_results, summary_value, group_summary]
 
 def show_selected_person(evt: gr.SelectData, faces, jsons):
     """Handle person selection in the gallery"""
@@ -163,7 +267,12 @@ with gr.Blocks() as demo:
         with gr.Column(scale=1):
             gr.Markdown("## All Results")
             all_json = gr.JSON(label="📊 All Analysis Results")
-
+        with gr.Column(scale=1):
+            gr.Markdown("## Group Summary (JSON)")
+            group_summary_json = gr.JSON(label="📊 Group Summary (Full)")
+        with gr.Column(scale=1):
+            gr.Markdown("## Group Summary")
+            group_summary = gr.Markdown(label="📊 Group Summary")
     # Set up event handlers
     analyze_outputs = [
         output_image,    # Original image
@@ -171,6 +280,8 @@ with gr.Blocks() as demo:
         state_faces,     # State for faces (hidden)
         state_jsons,     # State for JSON results (hidden)
         all_json,        # Display all results
+        group_summary,   # Display group summary (Markdown)
+        group_summary_json, # Display group summary (JSON)
     ]
 
     analyze_btn.click(
