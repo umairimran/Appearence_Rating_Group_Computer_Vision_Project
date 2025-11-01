@@ -23,15 +23,7 @@ __pycache__/
 *.task
 
 # Images and graphics (often large)
-*.jpg
-*.jpeg
-*.png
-*.gif
-*.bmp
-*.tiff
-*.tif
-*.webp
-*.svg
+
 
 # Video (large)
 *.mp4
