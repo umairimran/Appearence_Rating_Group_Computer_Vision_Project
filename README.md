@@ -6,7 +6,7 @@ A comprehensive computer vision system for appearance assessment and group syner
 
 ## 📹 Demo Video
 
-<video src="Portfolio/Computer Vision video.mp4" width="800" controls>
+<video src="Portfolio/video.mp4" width="800" controls>
   Your browser does not support the video tag.
 </video>
 
@@ -14,17 +14,17 @@ A comprehensive computer vision system for appearance assessment and group syner
 
 ## 📸 Portfolio Images
 
-![Computer Vision Image 1](Portfolio/Computer Vision Image 1.png)
+![Computer Vision Image 1](Portfolio/1.png)
 
-![Computer Vision Image 2](Portfolio/Computer Vision Image 2png.png)
+![Computer Vision Image 2](Portfolio/2.png)
 
-![Computer Vision Image 3](Portfolio/Computer Vision Image 3.png)
+![Computer Vision Image 3](Portfolio/3.png)
 
-![Computer Vision Image 4](Portfolio/Computer Vision Image 4.png)
+![Computer Vision Image 4](Portfolio/4.png)
 
-![Computer Vision Image 5](Portfolio/Computer Vision Image 5.png)
+![Computer Vision Image 5](Portfolio/5.png)
 
-![Computer Vision Image 6](Portfolio/Computer Vision Image 6.png)
+![Computer Vision Image 6](Portfolio/6.png)
 
 ## 🎯 Problem Statement
 
