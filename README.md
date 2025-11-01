@@ -6,9 +6,11 @@ A comprehensive computer vision system for appearance assessment and group syner
 
 ## 📹 Demo Video
 
-## 📹 Demo Video
 
-<video src="https://github.com/umairimran/Appearence_Rating_Group_Computer_Vision_Project/blob/main/Portfolio/video.mp4" controls width="640">
+<video src="https://raw.githubusercontent.com/umairimran/Appearence_Rating_Group_Computer_Vision_Project/refs/heads/main/Portfolio/video.mp4" 
+       controls 
+       width="640" 
+       style="border-radius:10px;">
   Your browser does not support the video tag.
 </video>
 
