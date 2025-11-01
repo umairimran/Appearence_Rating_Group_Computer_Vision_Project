@@ -4,7 +4,7 @@ import statistics
 import matplotlib.pyplot as plt
 from testing_media_pipe import MediaPipeService
 # Initialize video capture and MediaPipe service
-cap = cv2.VideoCapture("video2.mp4")
+cap = cv2.VideoCapture(0)
 mp_service = MediaPipeService()
 # Score trackers
 timestamps = []
@@ -72,7 +72,14 @@ while True:
         eye_contact_scores.append(eye_contact)
 
     # ==================== 🎨 STAGE 2: DRAWING & VISUALIZATION ====================
+    # ==================== 🎨 STAGE 2: DRAWING & VISUALIZATION ====================
 
+    # Draw face mesh and pose skeleton
+    mp_service.draw_face_landmarks(frame)
+    mp_service.draw_pose_landmarks(frame)
+
+    # Print status on frame
+    mp_service.print_smile_status(frame, simile_active, smile_score)
     # Print status on frame
     mp_service.print_smile_status(frame, simile_active, smile_score)
     mp_service.draw_eye_contact_status(frame, eye_contact)

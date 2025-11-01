@@ -4,6 +4,54 @@
 
 A comprehensive computer vision system for appearance assessment and group synergy analysis using advanced AI technologies including MediaPipe, YOLOv8, and Google Gemini.
 
+## 📹 Demo Video
+
+<video src="Portfolio/Computer Vision video.mp4" width="800" controls>
+  Your browser does not support the video tag.
+</video>
+
+*Watch the demo video showcasing the appearance rating and group synergy analysis system in action.*
+
+## 📸 Portfolio Images
+
+![Computer Vision Image 1](Portfolio/Computer Vision Image 1.png)
+
+![Computer Vision Image 2](Portfolio/Computer Vision Image 2png.png)
+
+![Computer Vision Image 3](Portfolio/Computer Vision Image 3.png)
+
+![Computer Vision Image 4](Portfolio/Computer Vision Image 4.png)
+
+![Computer Vision Image 5](Portfolio/Computer Vision Image 5.png)
+
+![Computer Vision Image 6](Portfolio/Computer Vision Image 6.png)
+
+## 🎯 Problem Statement
+
+In today's social media-driven world, there is a growing trend on platforms like TikTok where people judge the appearance of groups and individuals. We often need to assess the overall ability, appearance, and synergy of a person or group to make informed decisions - whether it's for social connections, professional collaborations, or entertainment purposes.
+
+This trend has created a demand for an objective, computer vision-based solution that can:
+- Analyze individual appearance metrics
+- Evaluate group synergy and coordination
+- Provide comprehensive scoring based on facial features, expressions, and group dynamics
+- Offer unbiased, data-driven assessments
+
+## 💡 Proposed Approach
+
+Our proposed solution leverages state-of-the-art computer vision technologies:
+
+- **MediaPipe** (Google-based library): For detecting and analyzing facial features of the human face, including facial landmarks, expressions, pose estimation, and eye contact detection.
+
+- **YOLOv8 Pre-trained Models**: For accurate face detection and person detection in images and videos, enabling robust multi-person analysis.
+
+- **Integrated Analysis Pipeline**: Combining MediaPipe's facial feature analysis with YOLO's detection capabilities to provide comprehensive appearance ratings and group synergy scores.
+
+This computer vision-based approach provides:
+- Real-time facial feature analysis
+- Group coordination assessment
+- Objective scoring metrics
+- Visual feedback and reporting
+
 ## 🚀 Quick Start
 
 ### Automated Installation (Recommended)
