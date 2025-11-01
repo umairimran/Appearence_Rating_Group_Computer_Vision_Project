@@ -6,7 +6,9 @@ A comprehensive computer vision system for appearance assessment and group syner
 
 ## 📹 Demo Video
 
-**[▶️ Watch Demo Video (Portfolio/video.mp4)](Portfolio/video.mp4)**
+<video src="Portfolio/video.mp4" controls autoplay muted loop width="640" style="border-radius:10px;">
+  Your browser does not support the video tag.
+</video>
 
 
 *Watch the demo video showcasing the appearance rating and group synergy analysis system in action.*
